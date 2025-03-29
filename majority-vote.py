@@ -19,18 +19,27 @@ from pathlib import Path
 import tempfile
 
 # Third-party imports
-import openai
+from openai import OpenAI  # Import the OpenAI class directly
+
+# If you want to check the version, use this instead:
+import pkg_resources
+openai_version = pkg_resources.get_distribution("openai").version
+print(f"OpenAI version: {openai_version}")
+
 from dotenv import load_dotenv
 from datasets import load_dataset
 
-# Load environment variables from .env file (contains OpenAI API key)
+# Load environment variables from .env file
 load_dotenv()
 
 # Global configuration
 PROBLEM_ID = 4  # Default problem ID to use
 
-# Initialize OpenAI client using API key from environment variables
-client = openai.OpenAI()  # The API key will be automatically loaded from OPENAI_API_KEY environment variable
+# Simplest possible initialization - should avoid the proxies issue
+client = OpenAI()
+
+# # Initialize OpenAI client using API key from environment variables
+# client = openai.OpenAI()  # The API key will be automatically loaded from OPENAI_API_KEY environment variable
 
 # System prompt for Red Teams (analytical problem solvers)
 SYSTEM_PROMPT_RED = """You are a systematic and analytical Python problem solver.
@@ -320,6 +329,50 @@ def test_solution(code: str, input_output: Dict) -> Tuple[bool, str]:
     
     return all_passed, explanation
 
+def majority_vote(solutions, input_text):
+    """
+    Implements majority voting by comparing the outputs of multiple solutions on the same input.
+    Only returns an answer if all solutions produce identical outputs.
+    
+    Args:
+        solutions (list): List of Python code solutions (already cleaned)
+        input_text (str): Input to test the solutions on
+        
+    Returns:
+        tuple: (matched, output)
+            - matched: Boolean indicating if all solutions produced identical outputs
+            - output: The agreed-upon output if matched is True, None otherwise
+    """
+    # Store outputs from each solution
+    solution_outputs = []
+    
+    # Run each solution with the same input
+    for i, solution in enumerate(solutions):
+        output, stderr, success = run_code_with_input(solution, input_text)
+        
+        # Record the output (or error message if execution failed)
+        if success:
+            solution_outputs.append((i, output.strip()))
+        else:
+            solution_outputs.append((i, f"ERROR: {stderr}"))
+    
+    # Extract just the outputs for comparison (ignore the solution indices)
+    outputs_only = [output for _, output in solution_outputs]
+    
+    # Check if all solutions produced identical outputs
+    unique_outputs = set(outputs_only)
+    outputs_match = len(unique_outputs) == 1
+    
+    # Return detailed results
+    result = {
+        "matched": outputs_match,
+        "output": outputs_only[0] if outputs_match else None,
+        "all_outputs": solution_outputs
+    }
+    
+    return result
+
+
 def create_results_folder() -> Path:
     """
     Creates a timestamped folder for storing the results of the current run.
@@ -334,7 +387,7 @@ def create_results_folder() -> Path:
     Returns:
         Path: Path object pointing to the created folder
     """
-    base_path = Path("/Users/sebastianbowkis/Ai-research/majority-vote-protocol/results")
+    base_path = Path("//Users/abowkis/Documents/Projects/majority-vote-protocol/results")
     current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     result_folder = base_path / current_time
     result_folder.mkdir(parents=True, exist_ok=True)
@@ -398,24 +451,11 @@ def save_test_results(folder_path: Path, results: Dict):
 def solve_problem_from_apps(problem_id: int = None) -> Dict[str, any]:
     """
     Main problem-solving orchestrator using APPS dataset.
-    
-    This function:
-    1. Loads a problem from the APPS dataset
-    2. Creates a new results folder
-    3. Gets solutions from both Red Teams
-    4. Tests the solutions
-    5. Saves results to files
-    6. Returns all data
-    
-    Args:
-        problem_id (int, optional): Specific problem ID to load. If None, loads a default problem.
-        
-    Returns:
-        Dict[str, any]: Dictionary containing problem, solutions, test results, and folder path
+    Phase 1: Generate and test solutions
     """
     # Load problem from APPS dataset
     problem_description, input_output, problem_id = load_apps_problem(problem_id)
-    print("got problem")
+    
     # Create results folder
     results_folder = create_results_folder()
     
@@ -429,40 +469,101 @@ def solve_problem_from_apps(problem_id: int = None) -> Dict[str, any]:
     save_response_to_file(results_folder, "Red Team 1", red1_solution)
     save_response_to_file(results_folder, "Red Team 2", red2_solution)
     
-    # Test solutions
-    print("Testing Red Team 1 solution...")
-    # Clean the solution before testing
+    # Clean the solutions before testing
     red1_cleaned = clean_code_response(red1_solution)
+    red2_cleaned = clean_code_response(red2_solution)
+    
+    # Test solutions against the APPS test cases
+    print("Testing Red Team 1 solution...")
     red1_passed, red1_explanation = test_solution(red1_cleaned, input_output)
     
     print("Testing Red Team 2 solution...")
-    # Clean the solution before testing
-    red2_cleaned = clean_code_response(red2_solution)
     red2_passed, red2_explanation = test_solution(red2_cleaned, input_output)
     
-    # Prepare results
+    # Prepare results (without majority voting for now)
     results = {
         "problem_id": problem_id,
         "problem_description": problem_description,
         "red_team_1": {
             "solution": red1_solution,
+            "cleaned_solution": red1_cleaned,
             "passed_all_tests": red1_passed,
             "explanation": red1_explanation,
         },
         "red_team_2": {
             "solution": red2_solution,
+            "cleaned_solution": red2_cleaned,
             "passed_all_tests": red2_passed,
             "explanation": red2_explanation,
-        },
-        "majority_vote": {
-            "agreement": red1_passed == red2_passed,
-            "overall_result": "PASS" if red1_passed and red2_passed else "FAIL"
         },
         "results_folder": str(results_folder)
     }
     
     # Save test results
     save_test_results(results_folder, results)
+    
+    return results
+
+def apply_majority_voting(results, test_input=None):
+    """
+    Phase 2: Apply majority voting to solutions that passed testing
+    
+    Args:
+        results (dict): Results from solve_problem_from_apps
+        test_input (str, optional): Input to use for testing. If None, use the first input from APPS
+    
+    Returns:
+        dict: Updated results with majority voting information
+    """
+    red1_passed = results["red_team_1"]["passed_all_tests"]
+    red2_passed = results["red_team_2"]["passed_all_tests"]
+    
+    # Initialize majority voting results
+    majority_vote_results = {
+        "performed": False,
+        "matched": False,
+        "output": None,
+        "all_outputs": []
+    }
+    
+    # Only proceed to majority voting if both pass all tests
+    if red1_passed and red2_passed:
+        print("Both solutions passed tests. Proceeding to majority voting...")
+        
+        # Get the solutions
+        red1_cleaned = results["red_team_1"]["cleaned_solution"]
+        red2_cleaned = results["red_team_2"]["cleaned_solution"]
+        
+        # If no test input provided, try to get one from the original problem
+        if test_input is None:
+            # Load the problem again to get inputs
+            _, input_output, _ = load_apps_problem(results["problem_id"])
+            test_input = input_output["inputs"][0] if input_output.get("inputs") else "Sample input"
+        
+        # Pass both answers to the majority voter
+        print(f"Running majority vote with input: {test_input[:50]}...")
+        vote_result = majority_vote([red1_cleaned, red2_cleaned], test_input)
+        
+        majority_vote_results = {
+            "performed": True,
+            "matched": vote_result["matched"],
+            "output": vote_result["output"],
+            "all_outputs": vote_result["all_outputs"]
+        }
+        
+        if vote_result["matched"]:
+            print("Majority vote PASSED: Both solutions produced identical outputs")
+            print(f"Agreed output: {vote_result['output'][:100]}..." if len(vote_result["output"]) > 100 else f"Agreed output: {vote_result['output']}")
+        else:
+            print("Majority vote FAILED: Solutions produced different outputs")
+    else:
+        print("Skipping majority vote since one or both solutions failed their tests")
+    
+    # Update results with majority voting information
+    results["majority_vote"] = majority_vote_results
+    
+    # Save updated results
+    save_test_results(Path(results["results_folder"]), results)
     
     return results
 
@@ -490,13 +591,25 @@ def pretty_print_results(results: Dict[str, any]):
     print(results['red_team_2']['explanation'])
     
     print("\n" + "-"*40 + "\n")
-    print("MAJORITY VOTE RESULTS:")
-    print(f"Teams in agreement: {results['majority_vote']['agreement']}")
-    print(f"Overall result: {results['majority_vote']['overall_result']}")
-    
-    print("\n" + "-"*40 + "\n")
     print(f"Results saved to: {results['results_folder']}")
     print("\n" + "="*80 + "\n")
+
+    print("\n" + "-"*40 + "\n")
+    print("MAJORITY VOTE RESULTS:")
+    if "majority_vote" in results:
+        if results["majority_vote"].get("performed", False):
+            print(f"Outputs match: {results['majority_vote']['matched']}")
+            if results['majority_vote']['matched']:
+                print(f"Agreed output: {results['majority_vote']['output']}")
+            else:
+                print("Solutions produced different outputs")
+                # Optionally show what each solution produced
+                for i, output in results['majority_vote']['all_outputs']:
+                    print(f"  Solution {i+1} output: {output[:50]}..." if len(output) > 50 else output)
+        else:
+            print("Majority vote not performed (solutions failed tests)")
+    else:
+        print("Majority vote phase not executed yet")
 
 def main():
     """
@@ -518,11 +631,23 @@ def main():
     try:
         results = solve_problem_from_apps(PROBLEM_ID)
         pretty_print_results(results)
+        if results["red_team_1"]["passed_all_tests"] and results["red_team_2"]["passed_all_tests"]:
+            # Load the problem again to get the first test input
+            _, input_output, _ = load_apps_problem(PROBLEM_ID)
+            test_input = input_output["inputs"][0]  # Use the first test input
+            
+            print(f"Using test input from unit tests: {test_input[:50]}..." if len(test_input) > 50 else test_input)
+            
+            # Apply majority voting with this test input
+            updated_results = apply_majority_voting(results, test_input)
+            
+            # See updated results
+            pretty_print_results(updated_results)
+
     except Exception as e:
         print(f"Error running majority vote protocol: {e}")
         import traceback
         traceback.print_exc()
-
 # Script entry point
 if __name__ == "__main__":
     main()

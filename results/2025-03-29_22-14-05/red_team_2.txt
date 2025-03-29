@@ -1,0 +1,21 @@
+def solve():
+    import sys
+    data = sys.stdin.read().strip().split()
+    if not data:
+        return
+    x = int(data[0])
+    hh = int(data[1])
+    mm = int(data[2])
+    total = hh * 60 + mm
+    y = 0
+    while True:
+        time_minutes = (total - x * y) % (24 * 60)
+        h = time_minutes // 60
+        m = time_minutes % 60
+        if '7' in f"{h:02d}{m:02d}":
+            sys.stdout.write(str(y))
+            break
+        y += 1
+
+if __name__ == '__main__':
+    solve()

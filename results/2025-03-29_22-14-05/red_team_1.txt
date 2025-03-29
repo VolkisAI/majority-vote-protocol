@@ -1,0 +1,19 @@
+def main():
+    import sys
+    data = sys.stdin.read().split()
+    x = int(data[0])
+    hh = int(data[1])
+    mm = int(data[2])
+    current_time = hh * 60 + mm
+    y = 0
+    while True:
+        new_time = (current_time - y * x) % (24 * 60)
+        new_hh = new_time // 60
+        new_mm = new_time % 60
+        if '7' in f"{new_hh:02d}{new_mm:02d}":
+            print(y)
+            return
+        y += 1
+
+if __name__ == "__main__":
+    main()
