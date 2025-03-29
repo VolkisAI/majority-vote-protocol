@@ -1,0 +1,77 @@
+import sys
+import math
+from collections import deque
+
+def find_independent_set_or_cycle(n, m, edges):
+    sqrt_n = math.ceil(math.sqrt(n))
+    
+    # Create adjacency list
+    adj = [[] for _ in range(n + 1)]
+    for u, v in edges:
+        adj[u].append(v)
+        adj[v].append(u)
+    
+    # BFS to find a cycle or independent set
+    parent = [-1] * (n + 1)
+    depth = [-1] * (n + 1)
+    queue = deque([1])
+    depth[1] = 0
+    
+    while queue:
+        node = queue.popleft()
+        
+        for neighbor in adj[node]:
+            if depth[neighbor] == -1:  # Not visited
+                parent[neighbor] = node
+                depth[neighbor] = depth[node] + 1
+                queue.append(neighbor)
+            elif neighbor != parent[node] and depth[node] > depth[neighbor]:
+                # Found a back edge, hence a cycle
+                cycle = []
+                x = node
+                y = neighbor
+                while x != y:
+                    if depth[x] > depth[y]:
+                        cycle.append(x)
+                        x = parent[x]
+                    else:
+                        cycle.append(y)
+                        y = parent[y]
+                cycle.append(x)
+                
+                if len(cycle) >= sqrt_n:
+                    print("2")
+                    print(len(cycle))
+                    print(" ".join(map(str, cycle)))
+                    return
+    
+    # If no cycle of required length is found, find an independent set
+    odd_set = []
+    even_set = []
+    for i in range(1, n + 1):
+        if depth[i] % 2 == 0:
+            even_set.append(i)
+        else:
+            odd_set.append(i)
+    
+    if len(odd_set) >= sqrt_n:
+        print("1")
+        print(" ".join(map(str, odd_set[:sqrt_n])))
+    else:
+        print("1")
+        print(" ".join(map(str, even_set[:sqrt_n])))
+
+# Read input
+input = sys.stdin.read
+data = input().split()
+n = int(data[0])
+m = int(data[1])
+edges = []
+index = 2
+for _ in range(m):
+    u = int(data[index])
+    v = int(data[index + 1])
+    edges.append((u, v))
+    index += 2
+
+find_independent_set_or_cycle(n, m, edges)

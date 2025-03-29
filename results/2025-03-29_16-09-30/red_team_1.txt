@@ -1,0 +1,4 @@
+x = input()
+n = len(x)
+max_sum = 9 * (n - 1) + int(x[0]) - 1 if n > 1 else int(x[0])
+print(max(max_sum, int(x) - 1))

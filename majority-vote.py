@@ -27,7 +27,7 @@ from datasets import load_dataset
 load_dotenv()
 
 # Global configuration
-PROBLEM_ID = 0  # Default problem ID to use
+PROBLEM_ID = 4  # Default problem ID to use
 
 # Initialize OpenAI client using API key from environment variables
 client = openai.OpenAI()  # The API key will be automatically loaded from OPENAI_API_KEY environment variable
@@ -93,7 +93,7 @@ def load_apps_problem(problem_id: int = None) -> Tuple[str, Dict, int]:
     
         # Extract problem description
         problem_description = sample["question"]
-        print(f"Problem title: {problem_description.split('\n')[0] if '\n' in problem_description else problem_description[:50]}...")
+        print(f"Problem title: {problem_description.split(chr(10))[0] if chr(10) in problem_description else problem_description[:50]}...")
         
         # Parse input-output tests
         input_output = json.loads(sample["input_output"]) if sample["input_output"] else {"inputs": [], "outputs": []}
@@ -109,7 +109,7 @@ def red_1(problem: str) -> str:
     """
     First Red Team AI agent implementation.
     
-    This function sends the problem to GPT-3.5-turbo with specific system instructions
+    This function sends the problem to GPT-4o with specific system instructions
     to analyze and solve the problem systematically.
     
     Args:
@@ -123,13 +123,13 @@ def red_1(problem: str) -> str:
     for attempt in range(1, max_retries + 1):
         try:
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="o3-mini",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
                     {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
                 ],
-                temperature=0,  # Use temperature 0 for more consistent responses
-                max_tokens=1500  # Increase token limit to allow for complete solutions
+                #temperature=0,  # Use temperature 0 for more consistent responses
+                max_completion_tokens=1000  # Increase token limit to allow for complete solutions
             )
             print(f"Red Team 1 response received! ({len(response.choices[0].message.content)} chars)")
             return response.choices[0].message.content
@@ -160,13 +160,13 @@ def red_2(problem: str) -> str:
     for attempt in range(1, max_retries + 1):
         try:
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="o3-mini",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
                     {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
                 ],
-                temperature=0,
-                max_tokens=1500  # Increase token limit to allow for complete solutions
+                #temperature=0,
+                max_completion_tokens=1000  # Increase token limit to allow for complete solutions
             )
             print(f"Red Team 2 response received! ({len(response.choices[0].message.content)} chars)")
             return response.choices[0].message.content
@@ -197,7 +197,7 @@ def problem_restator(prompt: str) -> str:
     for attempt in range(1, max_retries + 1):
         try:
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT_RESTATOR},
                     {"role": "user", "content": prompt}
@@ -340,6 +340,31 @@ def create_results_folder() -> Path:
     result_folder.mkdir(parents=True, exist_ok=True)
     return result_folder
 
+def clean_code_response(response: str) -> str:
+    """
+    Cleans AI response text by removing markdown code block delimiters.
+    
+    Args:
+        response (str): The AI response text that may contain markdown code blocks
+        
+    Returns:
+        str: Cleaned code without markdown delimiters
+    """
+    # Remove markdown code block syntax
+    response = response.strip()
+    
+    # Remove opening code block markers like ```python, ```java, etc.
+    if response.startswith("```"):
+        first_line_end = response.find("\n")
+        if first_line_end != -1:
+            response = response[first_line_end+1:]
+    
+    # Remove closing code block markers
+    if response.endswith("```"):
+        response = response[:-3].strip()
+    
+    return response
+
 def save_response_to_file(folder_path: Path, team_name: str, response: str):
     """
     Saves an AI team's response to a text file in the results folder.
@@ -351,8 +376,12 @@ def save_response_to_file(folder_path: Path, team_name: str, response: str):
     """
     filename = f"{team_name.replace(' ', '_').lower()}.txt"
     file_path = folder_path / filename
+    
+    # Clean the response before saving
+    cleaned_response = clean_code_response(response)
+    
     with open(file_path, "w") as f:
-        f.write(response)
+        f.write(cleaned_response)
 
 def save_test_results(folder_path: Path, results: Dict):
     """
@@ -402,10 +431,14 @@ def solve_problem_from_apps(problem_id: int = None) -> Dict[str, any]:
     
     # Test solutions
     print("Testing Red Team 1 solution...")
-    red1_passed, red1_explanation = test_solution(red1_solution, input_output)
+    # Clean the solution before testing
+    red1_cleaned = clean_code_response(red1_solution)
+    red1_passed, red1_explanation = test_solution(red1_cleaned, input_output)
     
     print("Testing Red Team 2 solution...")
-    red2_passed, red2_explanation = test_solution(red2_solution, input_output)
+    # Clean the solution before testing
+    red2_cleaned = clean_code_response(red2_solution)
+    red2_passed, red2_explanation = test_solution(red2_cleaned, input_output)
     
     # Prepare results
     results = {

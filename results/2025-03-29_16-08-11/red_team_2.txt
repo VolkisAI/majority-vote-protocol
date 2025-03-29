@@ -1,0 +1,17 @@
+```python
+s = input()
+
+left_bracket_idx = s.find('[')
+right_bracket_idx = s.rfind(']')
+if left_bracket_idx == -1 or right_bracket_idx == -1 or left_bracket_idx >= right_bracket_idx:
+    print(-1)
+else:
+    s = s[left_bracket_idx:right_bracket_idx+1]
+    first_colon_idx = s.find(':')
+    last_colon_idx = s.rfind(':')
+    if first_colon_idx == -1 or last_colon_idx == -1 or first_colon_idx >= last_colon_idx:
+        print(-1)
+    else:
+        vertical_lines = s.count('|', first_colon_idx, last_colon_idx)
+        print(4 + vertical_lines)
+```

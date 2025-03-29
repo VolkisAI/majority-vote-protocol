@@ -1,0 +1,16 @@
+s = input()
+
+opening_bracket_index = s.find('[')
+closing_bracket_index = s.rfind(']')
+if opening_bracket_index == -1 or closing_bracket_index == -1 or opening_bracket_index >= closing_bracket_index:
+    print(-1)
+else:
+    colon1_index = s.find(':', opening_bracket_index)
+    colon2_index = s.find(':', colon1_index + 1)
+    colon3_index = s.rfind(':', closing_bracket_index)
+    
+    if colon1_index == -1 or colon2_index == -1 or colon3_index == -1 or colon2_index >= colon3_index:
+        print(-1)
+    else:
+        max_length = 4 + s.count('|', colon1_index + 1, colon3_index)
+        print(max_length)

@@ -1,0 +1,29 @@
+def days_to_apple(h1, h2, a, b):
+    # Initial height difference
+    height_diff = h2 - h1
+    
+    # If the caterpillar can reach the apple on the first day
+    if a * 12 >= height_diff:
+        return 0
+    
+    # If the caterpillar slips more than it climbs in a full day
+    if a <= b:
+        return -1
+    
+    # Calculate the net gain per day
+    net_gain_per_day = (a - b) * 12
+    
+    # Calculate the remaining height after the first day
+    remaining_height = height_diff - a * 12
+    
+    # Calculate the number of full days needed
+    full_days_needed = (remaining_height + net_gain_per_day - 1) // net_gain_per_day
+    
+    return full_days_needed + 1
+
+# Read input
+h1, h2 = map(int, input().split())
+a, b = map(int, input().split())
+
+# Output the result
+print(days_to_apple(h1, h2, a, b))

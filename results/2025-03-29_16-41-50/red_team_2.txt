@@ -1,0 +1,33 @@
+def max_painted_sections(n, q, painters):
+    # Initialize an array to count coverage of each section
+    coverage = [0] * (n + 1)
+    
+    # Calculate the initial coverage by all painters
+    for l, r in painters:
+        for i in range(l, r + 1):
+            coverage[i] += 1
+    
+    # Calculate the total number of initially painted sections
+    total_painted = sum(1 for i in range(1, n + 1) if coverage[i] > 0)
+    
+    # Calculate the effect of removing each painter
+    effect = []
+    for l, r in painters:
+        effect.append(sum(1 for i in range(l, r + 1) if coverage[i] == 1))
+    
+    # Find the two painters whose removal minimizes the loss of painted sections
+    min_loss = float('inf')
+    for i in range(q):
+        for j in range(i + 1, q):
+            loss = effect[i] + effect[j]
+            min_loss = min(min_loss, loss)
+    
+    # The result is the total painted sections minus the minimum loss
+    return total_painted - min_loss
+
+# Read input
+n, q = map(int, input().split())
+painters = [tuple(map(int, input().split())) for _ in range(q)]
+
+# Output the result
+print(max_painted_sections(n, q, painters))

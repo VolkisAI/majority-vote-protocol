@@ -1,0 +1,23 @@
+def contains_seven(h, m):
+    s = f"{h:02}{m:02}"
+    return '7' in s
+
+def main():
+    import sys
+    data = sys.stdin.read().strip().split()
+    x = int(data[0])
+    hh = int(data[1])
+    mm = int(data[2])
+    target = hh * 60 + mm
+    y = 0
+    while True:
+        current = (target - x * y) % (24 * 60)
+        current_h = current // 60
+        current_m = current % 60
+        if contains_seven(current_h, current_m):
+            print(y)
+            break
+        y += 1
+
+if __name__ == "__main__":
+    main()
