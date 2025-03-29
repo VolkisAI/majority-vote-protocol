@@ -26,6 +26,9 @@ from datasets import load_dataset
 # Load environment variables from .env file (contains OpenAI API key)
 load_dotenv()
 
+# Global configuration
+PROBLEM_ID = 0  # Default problem ID to use
+
 # Initialize OpenAI client using API key from environment variables
 client = openai.OpenAI()  # The API key will be automatically loaded from OPENAI_API_KEY environment variable
 
@@ -64,30 +67,43 @@ def load_apps_problem(problem_id: int = None) -> Tuple[str, Dict, int]:
     Returns:
         Tuple[str, Dict, int]: Contains the problem description, input/output tests, and problem ID
     """
-    print("Loading APPS dataset...")
+    print(f"Connecting to HuggingFace to load problem ID: {problem_id if problem_id is not None else 'None (will use first problem)'}")
     
-    # Load the dataset
-    dataset = load_dataset("codeparrot/apps", split="test")
+    try:
+        # Only download the specific problem we need using the streaming API
+        print("Using streaming API to avoid downloading the entire dataset...")
+        for idx, sample in enumerate(load_dataset("codeparrot/apps", split="test", streaming=True)):
+            if problem_id is None and idx == 0:
+                # First problem when no ID specified
+                problem_id = sample["problem_id"]
+                print(f"Successfully loaded first problem (ID: {problem_id})")
+                break
+            elif sample["problem_id"] == problem_id:
+                # Found the problem with the specific ID
+                print(f"Successfully found problem with ID: {problem_id}")
+                break
+            
+            # Print progress every 100 problems
+            if idx % 100 == 0:
+                print(f"Searching... Checked {idx} problems so far")
+                
+        # If we reach this point without breaking, we didn't find the problem
+        else:
+            raise ValueError(f"Problem with ID {problem_id} not found in the dataset after checking {idx+1} problems")
     
-    # If no problem_id specified, use the first one
-    if problem_id is None:
-        sample = dataset[0]
-        problem_id = sample["problem_id"]
-    else:
-        # Find the problem with the specified ID
-        matching_samples = [s for s in dataset if s["problem_id"] == problem_id]
-        if not matching_samples:
-            raise ValueError(f"Problem with ID {problem_id} not found in the dataset.")
-        sample = matching_samples[0]
-    
-    # Extract problem description
-    problem_description = sample["question"]
-    
-    # Parse input-output tests
-    input_output = json.loads(sample["input_output"]) if sample["input_output"] else {"inputs": [], "outputs": []}
-    
-    print(f"Loaded problem ID: {problem_id}")
-    return problem_description, input_output, problem_id
+        # Extract problem description
+        problem_description = sample["question"]
+        print(f"Problem title: {problem_description.split('\n')[0] if '\n' in problem_description else problem_description[:50]}...")
+        
+        # Parse input-output tests
+        input_output = json.loads(sample["input_output"]) if sample["input_output"] else {"inputs": [], "outputs": []}
+        print(f"Number of test cases: {len(input_output.get('inputs', []))}")
+        
+        return problem_description, input_output, problem_id
+        
+    except Exception as e:
+        print(f"Error loading problem from dataset: {e}")
+        raise
 
 def red_1(problem: str) -> str:
     """
@@ -102,20 +118,29 @@ def red_1(problem: str) -> str:
     Returns:
         str: The AI's proposed solution or error message if the API call fails
     """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
-                {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
-            ],
-            temperature=0,  # Use temperature 0 for more consistent responses
-            max_tokens=1500  # Increase token limit to allow for complete solutions
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"Error getting AI response: {e}")
-        return "Error: Failed to get AI response"
+    print("Requesting solution from Red Team 1 (GPT-3.5)...")
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
+                    {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
+                ],
+                temperature=0,  # Use temperature 0 for more consistent responses
+                max_tokens=1500  # Increase token limit to allow for complete solutions
+            )
+            print(f"Red Team 1 response received! ({len(response.choices[0].message.content)} chars)")
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error getting AI response (attempt {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                print(f"Retrying in 5 seconds...")
+                import time
+                time.sleep(5)
+            else:
+                return "Error: Failed to get AI response after multiple attempts"
 
 def red_2(problem: str) -> str:
     """
@@ -130,20 +155,29 @@ def red_2(problem: str) -> str:
     Returns:
         str: The AI's proposed solution or error message if the API call fails
     """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
-                {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
-            ],
-            temperature=0,
-            max_tokens=1500  # Increase token limit to allow for complete solutions
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"Error getting AI response: {e}")
-        return "Error: Failed to get AI response"
+    print("Requesting solution from Red Team 2 (GPT-3.5)...")
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_RED.format(problem=problem)},
+                    {"role": "user", "content": "Solve this programming problem. Provide ONLY the Python code solution."}
+                ],
+                temperature=0,
+                max_tokens=1500  # Increase token limit to allow for complete solutions
+            )
+            print(f"Red Team 2 response received! ({len(response.choices[0].message.content)} chars)")
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error getting AI response (attempt {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                print(f"Retrying in 5 seconds...")
+                import time
+                time.sleep(5)
+            else:
+                return "Error: Failed to get AI response after multiple attempts"
 
 def problem_restator(prompt: str) -> str:
     """
@@ -158,20 +192,29 @@ def problem_restator(prompt: str) -> str:
     Returns:
         str: A reformulated version of the problem or error message
     """
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_RESTATOR},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,  # Higher temperature for more varied restatements
-            max_tokens=500
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        print(f"Error getting AI response: {e}")
-        return "Error: Failed to get AI response"
+    print("Requesting problem restatement from AI...")
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT_RESTATOR},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,  # Higher temperature for more varied restatements
+                max_tokens=500
+            )
+            print("Problem restatement received!")
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Error getting AI response (attempt {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                print(f"Retrying in 5 seconds...")
+                import time
+                time.sleep(5)
+            else:
+                return "Error: Failed to get AI response after multiple attempts"
 
 def run_code_with_input(code: str, input_text: str, timeout: int = 10) -> Tuple[str, str, bool]:
     """
@@ -185,6 +228,8 @@ def run_code_with_input(code: str, input_text: str, timeout: int = 10) -> Tuple[
     Returns:
         Tuple[str, str, bool]: stdout, stderr, and whether execution was successful
     """
+    print(f"Running code with input (timeout: {timeout}s)...")
+    
     # Create a temporary file to write the code
     with tempfile.NamedTemporaryFile(suffix='.py', delete=False) as tmp_file:
         tmp_file.write(code.encode('utf-8'))
@@ -203,11 +248,14 @@ def run_code_with_input(code: str, input_text: str, timeout: int = 10) -> Tuple[
         try:
             stdout, stderr = proc.communicate(input=input_text, timeout=timeout)
             success = proc.returncode == 0
+            print(f"Code execution {'successful' if success else 'failed'}")
             return stdout.strip(), stderr.strip(), success
         except subprocess.TimeoutExpired:
             proc.kill()
+            print(f"Execution timed out after {timeout} seconds")
             return "", "Execution timed out", False
     except Exception as e:
+        print(f"Error executing code: {str(e)}")
         return "", f"Error executing code: {str(e)}", False
     finally:
         # Clean up the temporary file
@@ -338,7 +386,7 @@ def solve_problem_from_apps(problem_id: int = None) -> Dict[str, any]:
     """
     # Load problem from APPS dataset
     problem_description, input_output, problem_id = load_apps_problem(problem_id)
-    
+    print("got problem")
     # Create results folder
     results_folder = create_results_folder()
     
@@ -430,11 +478,12 @@ def main():
     print("Majority Vote Protocol - APPS Problem Solver")
     print("=" * 50)
     
-    # Optionally specify a problem ID (default is None, which uses the first problem)
-    # problem_id = 42  # Uncomment and modify to use a specific problem
+    # Use the global PROBLEM_ID
+    global PROBLEM_ID
+    print(f"Using problem ID: {PROBLEM_ID}")
     
     try:
-        results = solve_problem_from_apps()
+        results = solve_problem_from_apps(PROBLEM_ID)
         pretty_print_results(results)
     except Exception as e:
         print(f"Error running majority vote protocol: {e}")
